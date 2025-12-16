@@ -787,3 +787,250 @@ ALLOWED_FILE_TYPES="application/pdf,image/jpeg,image/png,application/msword,appl
 - Minimal data collection by design
 - Transparent privacy notices
 - User consent mechanisms for data processing
+
+## Diagrams
+
+### 1. System Architecture Diagram
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        A[Browser - Next.js App]
+        B[React Components]
+        C[ShadCN UI Components]
+    end
+
+    subgraph "Application Layer"
+        D[Next.js API Routes]
+        E[Authentication Service]
+        F[Form Validation]
+        G[PDF Generation Service]
+        H[File Upload Service]
+    end
+
+    subgraph "Data Layer"
+        I[PostgreSQL Database]
+        J[File Storage - S3/R2]
+        K[Session Store - Redis]
+    end
+
+    subgraph "External Services"
+        L[Email Service - Resend]
+        M[Cloud Provider - AWS/Google]
+    end
+
+    A --> B
+    B --> C
+    B --> D
+    D --> E
+    D --> F
+    D --> G
+    D --> H
+    E --> I
+    F --> I
+    G --> I
+    G --> J
+    H --> J
+    H --> I
+    E --> K
+    L --> D
+    M --> J
+```
+
+### 2. Database Schema Diagram
+```mermaid
+erDiagram
+    USERS ||--o{ DECLARATIONS : creates
+    DECLARATIONS ||--o| SIGNATURES : has
+    DECLARATIONS ||--o{ EVIDENCE_FILES : contains
+    USERS ||--o{ EVIDENCE_FILES : uploads
+    USERS ||--o{ SESSIONS : has
+    USERS ||--o| AUDIT_LOGS : generates
+    DECLARATIONS ||--o| AUDIT_LOGS : affects
+
+    USERS {
+        uuid id PK
+        string name
+        string email UK
+        string password_hash
+        enum role
+        string department
+        string position
+        boolean is_active
+        boolean email_verified
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    DECLARATIONS {
+        uuid id PK
+        uuid user_id FK
+        enum type
+        string title
+        text description
+        text reason
+        enum status
+        timestamp submitted_at
+        timestamp verified_at
+        uuid verified_by FK
+        string reference_number UK
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    EVIDENCE_FILES {
+        uuid id PK
+        uuid declaration_id FK
+        uuid user_id FK
+        string original_name
+        string file_path
+        integer file_size
+        string mime_type
+        text file_url
+        uuid uploaded_by FK
+        timestamp uploaded_at
+        boolean is_public
+    }
+
+    SIGNATURES {
+        uuid id PK
+        uuid declaration_id FK
+        uuid user_id FK
+        text signature_data
+        text signature_image_url
+        timestamp signed_at
+        string ip_address
+    }
+
+    SESSIONS {
+        uuid id PK
+        uuid user_id FK
+        string session_token UK
+        timestamp expires_at
+        boolean is_active
+    }
+
+    AUDIT_LOGS {
+        uuid id PK
+        uuid user_id FK
+        string action
+        string resource_type
+        uuid resource_id
+        jsonb old_values
+        jsonb new_values
+        timestamp created_at
+    }
+```
+
+### 3. User Flow Diagram
+```mermaid
+flowchart TD
+    A[Guest User] --> B{Access Application}
+    B --> C[Landing Page]
+    C --> D{Wants to Create Declaration?}
+    D -->|Yes| E[Login/Register]
+    D -->|No| F[Contact Admin]
+
+    E --> G{Login or Register}
+    G -->|Login| H[Login Form]
+    G -->|Register| I[Registration Form]
+
+    H --> J{Login Successful?}
+    I --> K{Registration Successful?}
+    J -->|Yes| L[Dashboard]
+    J -->|No| H
+    K -->|Yes| M[Email Verification]
+    K -->|No| I
+
+    M --> N{Email Verified?}
+    N -->|Yes| L
+    N -->|No| M
+
+    L --> O{Create New Declaration?}
+    O -->|Yes| P[Declaration Form]
+    O -->|No| Q{View Existing?}
+
+    P --> R[Fill Form Details]
+    R --> S[Upload Evidence Files]
+    S --> T[Digital Signature]
+    T --> U[Submit Declaration]
+    U --> V[Generate PDF]
+    V --> W[Save to Database]
+    W --> L
+
+    Q --> L
+```
+
+### 4. PDF Generation and Signature Flow
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Application
+    participant DB as Database
+    participant FS as File Storage
+    participant SG as Signature Service
+    participant PDF as PDF Generator
+
+    U->>A: Submit completed declaration
+    A->>SG: Capture signature from canvas
+    SG->>A: Return base64 signature data
+    A->>DB: Save signature to database
+    A->>PDF: Send declaration data and signature
+    PDF->>PDF: Generate PDF document
+    PDF->>FS: Upload PDF to storage
+    FS->>A: Return PDF URL
+    A->>U: Provide download link
+    A->>DB: Update declaration status to completed
+```
+
+### 5. Security and Access Control Diagram
+```mermaid
+graph TD
+    A[User Request] --> B{Authenticated?}
+    B -->|No| C[Redirect to Login]
+    B -->|Yes| D{Has Required Permissions?}
+
+    D -->|No| E[Access Denied - 403]
+    D -->|Yes| F{Resource Owner?}
+
+    F -->|No| G{Is Admin?}
+    F -->|Yes| H[Allow Access]
+
+    G -->|No| E
+    G -->|Yes| H
+
+    C --> I[Session Validation]
+    I --> J{Session Valid?}
+    J -->|No| K[Clear Session & Redirect Login]
+    J -->|Yes| F
+
+    H --> L[Log Access in Audit Trail]
+    L --> M[Return Requested Resource]
+
+    style A fill:#e1f5fe
+    style E fill:#ffebee
+    style H fill:#e8f5e8
+    style M fill:#fff3e0
+```
+
+### 6. File Upload and Storage Flow
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Application
+    participant V as File Validator
+    participant FS as File Storage
+    participant DB as Database
+
+    U->>A: Select and upload file
+    A->>V: Validate file (type, size, security)
+    V->>A: Validation result
+    alt Valid File
+        A->>FS: Upload file to cloud storage
+        FS->>A: File URL
+        A->>DB: Store file metadata
+        DB->>A: Confirmation
+        A->>U: Upload success
+    else Invalid File
+        A->>U: Error message
+    end
+```
